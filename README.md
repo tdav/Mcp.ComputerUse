@@ -1,35 +1,36 @@
 # Mcp.ComputerUse
 
-Windows computer-use MCP-сервер на .NET 10 с компиляцией в Native AOT. Даёт LLM-агенту (Claude Code, Claude Desktop, любой MCP-клиент) полный контроль над Windows-машиной: скриншоты мониторов, мышь, клавиатура, файлы, запуск процессов, PowerShell.
+Windows computer-use MCP server built on .NET 10 with Native AOT compilation. Gives an LLM agent (Claude Code, Claude Desktop, any MCP client) full control over a Windows machine: monitor screenshots, mouse, keyboard, files, process launch, PowerShell.
 
-Один self-contained `.exe` ~10 MB, без рантайма .NET. Vision-first: модель получает PNG скриншота прямо во входе, отдаёт координаты в downscaled пиксельной системе, сервер маппит их обратно на физические пиксели экрана.
+One self-contained `.exe`, ~10 MB, no .NET runtime required. Vision-first: the model receives a downscaled PNG directly in its input, returns coordinates in the scaled pixel space, and the server maps them back to physical screen pixels.
 
-- **Версия:** v0.1.0
-- **Платформа:** Windows 10/11 x64
-- **Транспорт:** stdio
+- **Version:** v0.1.0
+- **Platform:** Windows 10/11 x64
+- **Transport:** stdio
 - **MCP SDK:** ModelContextProtocol 1.3.0
-- **Лицензия кода:** см. CLAUDE.md / отсутствует — добавь по своему усмотрению
+- **Language:** [Русский README](README-ru.md)
+- **Code license:** not set yet — add one as appropriate
 
 ---
 
-## Возможности
+## Features
 
-16 MCP-инструментов, сгруппированных по слоям:
+16 MCP tools grouped by layer:
 
-| Категория | Инструменты | Назначение |
+| Category | Tools | Purpose |
 |---|---|---|
-| Discovery | `ping`, `list_monitors` | Проверка связи, перечисление мониторов с DPI |
-| Vision | `screenshot` | Снимок монитора с автоматическим downscale до WXGA, возврат через `image`-блок MCP-протокола |
-| Mouse | `mouse_move`, `mouse_click`, `mouse_down`, `mouse_up`, `mouse_drag`, `mouse_scroll`, `cursor_position` | Полный набор действий мышью с координатным remap |
-| Keyboard | `type_text`, `key_press`, `key_hold`, `key_hotkey`, `wait` | Юникод-ввод, хоткеи, паузы |
-| Files | `read_file`, `write_file`, `create_folder` | Файловые операции, UTF-8/ASCII/UTF-16/binary |
-| Process | `launch_app`, `shell` | Запуск программ через ShellExecute, PowerShell с таймаутом |
+| Discovery | `ping`, `list_monitors` | Wire check, enumerate monitors with DPI |
+| Vision | `screenshot` | Monitor capture with automatic downscale to WXGA, returned via MCP `image` content block |
+| Mouse | `mouse_move`, `mouse_click`, `mouse_down`, `mouse_up`, `mouse_drag`, `mouse_scroll`, `cursor_position` | Full mouse action set with coordinate remap |
+| Keyboard | `type_text`, `key_press`, `key_hold`, `key_hotkey`, `wait` | Unicode input, hotkeys, delays |
+| Files | `read_file`, `write_file`, `create_folder` | File ops with UTF-8 / ASCII / UTF-16 / binary |
+| Process | `launch_app`, `shell` | Launch via ShellExecute, PowerShell with timeout |
 
-Полный список параметров каждого tool — в разделе [Tool reference](#tool-reference).
+Full parameter reference for every tool is in [Tool reference](#tool-reference).
 
 ---
 
-## Архитектура
+## Architecture
 
 ```
 ┌─────────────── Claude Code / MCP client ───────────────┐
@@ -57,55 +58,55 @@ Windows computer-use MCP-сервер на .NET 10 с компиляцией в 
         └─────────────────────────────────┘
 ```
 
-Ключевые архитектурные решения:
+Key architectural decisions:
 
-- **AOT-чистота:** все DTO зарегистрированы в `McpJsonContext : JsonSerializerContext`, инструменты регистрируются явно через `.WithTools<T>()` (без рефлексии), никакого `WithToolsFromAssembly()`.
-- **Per-Monitor V2 DPI:** через `app.manifest` + защитный `SetProcessDpiAwarenessContext` первой строкой Main. Без этого на 150%/200% scaled мониторах координаты «уплывают».
-- **Координатный pipeline:** `screenshot` запоминает `ScalePlan` для монитора (origin + factor), все `mouse_*` по умолчанию работают в model-координатах и реверсятся через кэш.
-- **Multi-monitor mouse:** `SendInput` с `MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE` — без `VIRTUALDESK` мышь работала бы только на основном мониторе.
-- **stderr-only логи:** `LogToStandardErrorThreshold = LogLevel.Trace`. Stdout зарезервирован под MCP-фрейминг.
-- **Image delivery:** `ScreenTools.Screenshot` возвращает `CallToolResult` с двумя content-блоками — `image/png` (base64) + `text` с `ScreenshotMeta` (origW, scaledW, factorX, monitorLeft). Claude Code сам кладёт картинку во vision-контекст модели.
+- **AOT cleanliness:** every DTO is registered in `McpJsonContext : JsonSerializerContext`, tools are registered explicitly via `.WithTools<T>()` (no reflection), no `WithToolsFromAssembly()`.
+- **Per-Monitor V2 DPI:** via `app.manifest` plus a defensive `SetProcessDpiAwarenessContext` as the first statement in `Main`. Without this, coordinates drift on 150% / 200% scaled monitors.
+- **Coordinate pipeline:** `screenshot` caches a `ScalePlan` (origin + factor) per monitor; every `mouse_*` defaults to model coordinates and reverses the mapping using the cache.
+- **Multi-monitor mouse:** `SendInput` uses `MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE` — without `VIRTUALDESK`, the mouse would only reach the primary monitor.
+- **stderr-only logging:** `LogToStandardErrorThreshold = LogLevel.Trace`. Stdout is reserved for MCP framing.
+- **Image delivery:** `ScreenTools.Screenshot` returns a `CallToolResult` with two content blocks — `image/png` (base64) plus a `text` block carrying `ScreenshotMeta` (origW, scaledW, factorX, monitorLeft). Claude Code feeds the image directly into the model's vision context.
 
 ---
 
-## Структура репозитория
+## Repository layout
 
 ```
 Mcp.ComputerUse/
-├── Mcp.ComputerUse/                    # основной проект
+├── Mcp.ComputerUse/                    # main project
 │   ├── Mcp.ComputerUse.csproj          # net10.0-windows, PublishAot, IsAotCompatible
 │   ├── app.manifest                    # Per-Monitor V2 DPI
 │   ├── Program.cs                      # DI host, stdio transport, AppOptions
-│   ├── AppOptions.cs                   # CLI-флаги
+│   ├── AppOptions.cs                   # CLI flags
 │   ├── Native/
-│   │   ├── Win32.cs                    # [LibraryImport]/[DllImport] декларации
+│   │   ├── Win32.cs                    # [LibraryImport]/[DllImport] declarations
 │   │   └── NativeTypes.cs              # RECT, MONITORINFOEX, INPUT, ...
 │   ├── Core/
-│   │   ├── MonitorRegistry.cs          # EnumDisplayMonitors + кэш
+│   │   ├── MonitorRegistry.cs          # EnumDisplayMonitors + cache
 │   │   ├── MonitorInfo.cs              # Rect, MonitorInfo records
 │   │   ├── CoordinateMapper.cs         # ScalePlan, ModelToScreen, ScreenToModel
-│   │   ├── ScalePlanCache.cs           # per-monitor план
+│   │   ├── ScalePlanCache.cs           # per-monitor plan
 │   │   ├── ScreenCaptureService.cs     # BitBlt + ImageSharp PNG
-│   │   ├── ScreenshotStorage.cs        # сохранение PNG на диск
+│   │   ├── ScreenshotStorage.cs        # persist PNG to disk
 │   │   ├── InputService.cs             # SendInput mouse + keyboard
 │   │   ├── MouseButton.cs              # enum
-│   │   ├── VirtualKeyMap.cs            # парсинг "ctrl+shift+esc"
+│   │   ├── VirtualKeyMap.cs            # parses "ctrl+shift+esc"
 │   │   ├── VisualFlash.cs              # stub overlay (v0.2)
 │   │   └── FileService.cs              # read/write/exec/shell
 │   ├── Tools/
 │   │   ├── PingTools.cs
 │   │   ├── MonitorTools.cs             # list_monitors
 │   │   ├── ScreenTools.cs              # screenshot
-│   │   ├── MouseTools.cs               # все mouse_*
-│   │   ├── KeyboardTools.cs            # все key_* + wait
+│   │   ├── MouseTools.cs               # every mouse_*
+│   │   ├── KeyboardTools.cs            # every key_* + wait
 │   │   └── FileTools.cs                # read_file/write_file/launch_app/shell
 │   └── Json/
-│       └── McpJsonContext.cs           # JsonSerializerContext для AOT
+│       └── McpJsonContext.cs           # JsonSerializerContext for AOT
 ├── Mcp.ComputerUse.Tests/              # xUnit + FluentAssertions
 │   ├── SmokeTests.cs
 │   ├── MonitorRegistryTests.cs
 │   ├── CoordinateMapperTests.cs
-│   ├── ScreenCaptureSmokeTests.cs      # integration (нужен интерактивный desktop)
+│   ├── ScreenCaptureSmokeTests.cs      # integration (needs an interactive desktop)
 │   └── FileServiceTests.cs
 ├── docs/
 │   ├── superpowers/
@@ -113,43 +114,43 @@ Mcp.ComputerUse/
 │   │   └── plans/2026-05-21-computer-use-mcp.md          # implementation plan
 │   ├── Building a Windows Computer-Use MCP Server in C# with Native AOT.pdf
 │   └── Разработка MCP-сервера на .NET 10 AOT.pdf
-├── claude-mcp.example.json             # пример конфига для Claude Code
+├── claude-mcp.example.json             # example Claude Code config
 └── README.md
 ```
 
 ---
 
-## Требования
+## Requirements
 
 | | |
 |---|---|
 | **OS** | Windows 10 1903+ / Windows 11 |
 | **.NET SDK** | 10.0+ |
-| **MSVC Build Tools** | Только для AOT-публикации. Для dev-цикла (`dotnet build`/`dotnet test`) не нужны. |
+| **MSVC Build Tools** | Only for AOT publish. The dev loop (`dotnet build` / `dotnet test`) does not need them. |
 
-### Установка MSVC Build Tools (один раз)
+### One-time MSVC Build Tools install
 
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 ```
 
-Альтернатива: запустить Visual Studio Installer → выбрать workload «Desktop development with C++».
+Alternative: run Visual Studio Installer → select the "Desktop development with C++" workload.
 
-### Если AOT publish жалуется на `'vswhere.exe' is not recognized`
+### If AOT publish complains `'vswhere.exe' is not recognized`
 
-`vswhere.exe` лежит в `C:\Program Files (x86)\Microsoft Visual Studio\Installer\`, но не в `PATH` по умолчанию. Лечится в текущей сессии:
+`vswhere.exe` lives in `C:\Program Files (x86)\Microsoft Visual Studio\Installer\`, but is not on `PATH` by default. Fix for the current session:
 
 ```powershell
 $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"
 ```
 
-Или из Developer PowerShell for VS — там `PATH` уже корректный.
+Or launch a Developer PowerShell for VS — `PATH` is already configured there.
 
 ---
 
-## Сборка
+## Build
 
-### Dev-цикл (без AOT, быстрая итерация)
+### Dev loop (no AOT, fast iteration)
 
 ```powershell
 cd C:\Works\Mcp.ComputerUse
@@ -164,21 +165,21 @@ $env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PAT
 dotnet publish Mcp.ComputerUse/Mcp.ComputerUse.csproj -c Release -r win-x64
 ```
 
-Результат: `Mcp.ComputerUse/bin/Release/net10.0-windows/win-x64/publish/mcp-computeruse.exe` (~10 MB).
+Result: `Mcp.ComputerUse/bin/Release/net10.0-windows/win-x64/publish/mcp-computeruse.exe` (~10 MB).
 
 ---
 
-## Подключение к Claude Code
+## Connecting to Claude Code
 
-### Способ 1: через CLI
+### Option 1: via CLI
 
 ```powershell
 claude mcp add computer-use "C:\Works\Mcp.ComputerUse\Mcp.ComputerUse\bin\Release\net10.0-windows\win-x64\publish\mcp-computeruse.exe"
 ```
 
-### Способ 2: вручную через config
+### Option 2: manual config
 
-Открой конфиг Claude Code (`~/.config/claude/claude_desktop_config.json` или `%APPDATA%\Claude\claude_desktop_config.json`) и добавь:
+Open the Claude Code config (`~/.config/claude/claude_desktop_config.json` or `%APPDATA%\Claude\claude_desktop_config.json`) and add:
 
 ```json
 {
@@ -191,9 +192,9 @@ claude mcp add computer-use "C:\Works\Mcp.ComputerUse\Mcp.ComputerUse\bin\Releas
 }
 ```
 
-Перезапусти Claude Code. В новой сессии инструменты `computer-use__*` станут доступны.
+Restart Claude Code. In a fresh session the `computer-use__*` tools will be available.
 
-### С опциями
+### With options
 
 ```json
 {
@@ -213,36 +214,36 @@ claude mcp add computer-use "C:\Works\Mcp.ComputerUse\Mcp.ComputerUse\bin\Releas
 
 ---
 
-## CLI-флаги и env-переменные
+## CLI flags and env vars
 
-| Флаг | Env var | Default | Описание |
+| Flag | Env var | Default | Description |
 |---|---|---|---|
-| `--screenshots-dir <path>` | `MCP_COMPUTERUSE_SCREENSHOTS_DIR` | `Environment.CurrentDirectory` | Куда сохранять PNG скриншотов. Файл всё равно отдаётся base64 в ответе — это аудит-копия. |
-| `--scale-target <name>` | — | `wxga` | Дефолтная цель downscale: `xga` (1024×768), `wxga` (1280×800), `fwxga` (1366×768), `none`. |
-| `--default-monitor <n>` | — | `0` | Монитор по умолчанию (используется в v0.2 — сейчас всегда передаётся явно). |
-| `--no-flash` | — | enabled | Выключает визуальный flash overlay (в v0.1 это stub, без визуала). |
-| `--log-level <level>` | — | `Information` | `Trace`/`Debug`/`Information`/`Warning`/`Error` — пишется в stderr. |
+| `--screenshots-dir <path>` | `MCP_COMPUTERUSE_SCREENSHOTS_DIR` | `Environment.CurrentDirectory` | Where to save screenshot PNGs. The file is also returned base64-encoded in the response — this is the audit copy. |
+| `--scale-target <name>` | — | `wxga` | Default downscale target: `xga` (1024×768), `wxga` (1280×800), `fwxga` (1366×768), `none`. |
+| `--default-monitor <n>` | — | `0` | Default monitor index (used by v0.2 — for now always passed explicitly). |
+| `--no-flash` | — | enabled | Disables the visual flash overlay (in v0.1 this is a stub — no actual overlay drawn). |
+| `--log-level <level>` | — | `Information` | `Trace` / `Debug` / `Information` / `Warning` / `Error` — written to stderr. |
 
 ---
 
 ## Tool reference
 
-JSON-параметры всех инструментов в snake_case. Возврат всегда внутри стандартного MCP `CallToolResult.content`.
+JSON parameters use snake_case across every tool. Returns are always inside the standard MCP `CallToolResult.content`.
 
 ### `ping`
 
-Echo + timestamp. Проверка связи.
+Echo + timestamp. Wire check.
 
 ```jsonc
 // args
 { "message": "hello" }
-// result text-block содержит:
+// result text block contains:
 { "message": "hello", "server_time_unix_ms": 1747834567890 }
 ```
 
 ### `list_monitors`
 
-Без аргументов. Перечисляет все мониторы.
+No arguments. Enumerates all monitors.
 
 ```jsonc
 // result
@@ -277,7 +278,7 @@ Echo + timestamp. Проверка связи.
 }
 ```
 
-Возврат: `image`-блок (base64 PNG) + `text`-блок с метаданными:
+Returns: an `image` block (base64 PNG) plus a `text` block with metadata:
 
 ```jsonc
 {
@@ -291,11 +292,11 @@ Echo + timestamp. Проверка связи.
 }
 ```
 
-**Важно:** после `screenshot` сервер запоминает `ScalePlan` для этого монитора. Все последующие `mouse_*` с `coord_space="model"` используют его, чтобы развернуть model-координаты обратно в физические пиксели.
+**Important:** after `screenshot`, the server caches the `ScalePlan` for that monitor. Every subsequent `mouse_*` with `coord_space="model"` uses it to reverse model coordinates back into physical pixels.
 
 ### Mouse tools
 
-Все принимают `monitor_index`, `coord_space` (`"model"` default или `"screen"`), плюс свои координаты.
+All accept `monitor_index`, `coord_space` (`"model"` default or `"screen"`), plus their own coordinates.
 
 ```jsonc
 // mouse_move
@@ -306,7 +307,7 @@ Echo + timestamp. Проверка связи.
 // button: "left" | "right" | "middle"
 // clicks: 1 (single), 2 (double), 3 (triple)
 
-// mouse_down / mouse_up — те же поля, без clicks
+// mouse_down / mouse_up — same fields, no clicks
 // mouse_drag
 { "monitor_index": 0, "from_x": 100, "from_y": 100, "to_x": 500, "to_y": 500, "button": "left" }
 
@@ -314,33 +315,33 @@ Echo + timestamp. Проверка связи.
 { "monitor_index": 0, "x": 683, "y": 384, "clicks": 3, "direction": "vertical" }
 // direction: "vertical" | "horizontal", clicks ±N (WHEEL_DELTA = 120 per click)
 
-// cursor_position — возвращает позицию в model-координатах для этого монитора
+// cursor_position — returns cursor position in model coords for that monitor
 { "monitor_index": 0 }
 // result: { "x": 683, "y": 384, "monitor_index": 0 }
 ```
 
-`coord_space="screen"` пропускает remap — координаты трактуются как физические пиксели всего desktop.
+`coord_space="screen"` skips the remap — x/y are treated as physical desktop pixels.
 
 ### Keyboard tools
 
 ```jsonc
-// type_text — Unicode-ввод через KEYEVENTF_UNICODE, не зависит от раскладки
+// type_text — Unicode input via KEYEVENTF_UNICODE, layout-independent
 { "text": "Привет, мир!", "delay_ms": 0 }
 
-// key_press — одиночное нажатие
+// key_press — single key
 { "key": "Enter" }
-// Поддержанные имена: Enter/Return, Tab, Backspace, Escape/Esc, Space,
+// Supported names: Enter/Return, Tab, Backspace, Escape/Esc, Space,
 // PgUp/PgDn, End, Home, Left/Right/Up/Down, Insert, Delete/Del,
 // Win/LWin/RWin, Ctrl/Control, Shift, Alt, F1..F12,
 // CapsLock, NumLock, ScrollLock, PrintScreen/PrtSc,
-// одиночные символы (a-z, 0-9, символы через VkKeyScanW)
+// single chars (a-z, 0-9, other symbols via VkKeyScanW)
 
-// key_hold — нажать → ждать → отпустить
+// key_hold — press → wait → release
 { "key": "shift", "ms": 1000 }
 
-// key_hotkey — комбо
+// key_hotkey — chord
 { "keys": "ctrl+shift+esc" }
-// модификаторы нажимаются по порядку, отпускаются в обратном
+// modifiers go down in order, then up in reverse
 
 // wait
 { "ms": 1500 }
@@ -351,138 +352,138 @@ Echo + timestamp. Проверка связи.
 ```jsonc
 // read_file
 { "path": "C:\\tmp\\hi.txt", "encoding": "utf8" }
-// encoding: "utf8" | "ascii" | "utf16" | "binary" (binary возвращает base64)
+// encoding: "utf8" | "ascii" | "utf16" | "binary" (binary returns base64)
 // result: { "content": "...", "encoding": "utf8" }
 
 // write_file
 { "path": "C:\\tmp\\hi.txt", "content": "Hello", "encoding": "utf8", "overwrite": false }
-// overwrite=false бросит IOException если файл существует
+// overwrite=false throws IOException if file exists
 
 // create_folder
 { "path": "C:\\tmp\\agent" }
 
-// launch_app — ShellExecute, поддерживает PATH и file associations
+// launch_app — ShellExecute, honors PATH and file associations
 { "path": "notepad.exe", "args": "C:\\tmp\\hi.txt", "working_dir": null }
 // result: { "pid": 12345 }
 
-// shell — PowerShell с таймаутом
+// shell — PowerShell with timeout
 { "command": "Get-Process | Where-Object Name -eq 'notepad'", "working_dir": null, "timeout_ms": 30000 }
 // result: { "exit_code": 0, "stdout": "...", "stderr": "" }
 ```
 
 ---
 
-## Координатная система — детально
+## Coordinate system in detail
 
-Модели зрения работают эффективнее на изображениях ~1280×800 пикселей, чем на 4K. Anthropic явно рекомендует **делать downscale в инструменте**, а не полагаться на их server-side resize (последнее снижает точность модели).
+Vision models perform more accurately on images around 1280×800 pixels than on 4K. Anthropic explicitly recommends **doing the downscale inside the tool** rather than relying on their server-side resize (which lowers model accuracy).
 
-Поэтому:
+So:
 
-1. **При `screenshot`**: native 2560×1440 → downscale до FWXGA 1366×768 → отправка модели. Сохраняется `ScalePlan { orig=(2560,1440), scaled=(1366,768), factor=(0.534, 0.533), origin=(0,0) }`.
-2. **Модель** видит картинку 1366×768 и говорит: «кликни в (683, 384)».
-3. **При `mouse_click(monitor_index=0, x=683, y=384, coord_space="model")`**:
-   - `ModelToScreen` → `(round(683/0.534)+0, round(384/0.533)+0)` = `(1279, 720)` — физический пиксель экрана.
-   - Нормализация в virtual desktop 0..65535: `(round(1279 * 65535 / (vsWidth-1)), ...)`.
-   - `SendInput` с `MOVE | ABSOLUTE | VIRTUALDESK`, потом `LEFTDOWN+LEFTUP`.
+1. **On `screenshot`**: native 2560×1440 → downscale to FWXGA 1366×768 → sent to the model. The server stores `ScalePlan { orig=(2560,1440), scaled=(1366,768), factor=(0.534, 0.533), origin=(0,0) }`.
+2. **The model** sees a 1366×768 image and says "click at (683, 384)".
+3. **On `mouse_click(monitor_index=0, x=683, y=384, coord_space="model")`**:
+   - `ModelToScreen` → `(round(683/0.534)+0, round(384/0.533)+0)` = `(1279, 720)` — a physical desktop pixel.
+   - Normalize to the virtual desktop 0..65535 range: `(round(1279 * 65535 / (vsWidth-1)), ...)`.
+   - `SendInput` with `MOVE | ABSOLUTE | VIRTUALDESK`, then `LEFTDOWN+LEFTUP`.
 
-**Escape hatch:** `coord_space="screen"` пропускает шаг (1) и трактует x/y как физические пиксели desktop. Полезно, если у тебя уже есть точные координаты.
+**Escape hatch:** `coord_space="screen"` skips step (1) and treats x/y as physical desktop pixels. Useful if you already have exact coordinates.
 
-**Если `mouse_*` зовётся без предварительного `screenshot`** на этот монитор — сервер бросит ошибку `InvalidOperationException: No ScalePlan cached for monitor N. Call screenshot first, or pass coord_space='screen'.`
+**If `mouse_*` is called without a prior `screenshot`** on that monitor, the server throws `InvalidOperationException: No ScalePlan cached for monitor N. Call screenshot first, or pass coord_space='screen'.`
 
 ---
 
-## Тестирование
+## Testing
 
-### Юнит-тесты
+### Unit tests
 
 ```powershell
 dotnet test Mcp.ComputerUse.Tests/Mcp.ComputerUse.Tests.csproj
 ```
 
-Покрытие v0.1.0:
+v0.1.0 coverage:
 
-- `CoordinateMapperTests` — round-trip model↔screen, граничные случаи, выбор aspect-ratio target
-- `MonitorRegistryTests` — реальный `EnumDisplayMonitors`
-- `ScreenCaptureSmokeTests` — реальный `BitBlt` + downscale (integration, нужен интерактивный desktop)
-- `FileServiceTests` — UTF-8 round-trip с кириллицей, отказ overwrite, binary base64
+- `CoordinateMapperTests` — model↔screen round-trip, edge cases, aspect-ratio target selection
+- `MonitorRegistryTests` — real `EnumDisplayMonitors`
+- `ScreenCaptureSmokeTests` — real `BitBlt` + downscale (integration, needs an interactive desktop)
+- `FileServiceTests` — UTF-8 round-trip with Cyrillic, overwrite refusal, binary base64
 - `SmokeTests` — Ping
 
-Итого: 12 тестов.
+Total: 12 tests.
 
-### E2E чек-лист (в Claude Code после подключения)
+### E2E checklist (inside Claude Code once the server is connected)
 
-1. «List my monitors» → массив с DPI совпадает с твоей настройкой
-2. «Take a screenshot of monitor 0» → картинка появляется **прямо в чате**
-3. Ссылаясь на скриншот: «Click on the Start button» → курсор летит куда нужно
-4. «Open Notepad, click center, type Привет, press Ctrl+S, type C:\\tmp\\hi.txt, press Enter» → сквозной сценарий
-5. «Read C:\\tmp\\hi.txt» → `Привет`
-6. «Run powershell Get-Date» → результат
+1. "List my monitors" → array matches your DPI setup
+2. "Take a screenshot of monitor 0" → image appears **inline in chat**
+3. Referencing the screenshot: "Click on the Start button" → cursor goes where it should
+4. "Open Notepad, click center, type Hello, press Ctrl+S, type C:\\tmp\\hi.txt, press Enter" → end-to-end flow
+5. "Read C:\\tmp\\hi.txt" → `Hello`
+6. "Run powershell Get-Date" → output
 
 ---
 
 ## Troubleshooting
 
-| Симптом | Причина | Решение |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `'vswhere.exe' is not recognized` при `dotnet publish` | MSVC installer не в PATH | `$env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"` |
-| Клики падают мимо на ~2-4 px на DPI-scaled мониторе | manifest не применён | Проверь, что `app.manifest` встроен в exe (`dumpbin /headers` должен показать `application/dpiAware`). Перепубликуй. |
-| `BitBlt` возвращает чёрный экран для конкретного окна | HW-accelerated DWM-композиция (Chrome, Electron, некоторые DRM) | Известное ограничение GDI. В v0.2 будет fallback на `Windows.Graphics.Capture`. |
-| Tool возвращает «No ScalePlan cached for monitor N» | вызвали `mouse_*` без предварительного `screenshot` этого монитора | сделай `screenshot(monitor_index=N)` сначала, или передай `coord_space="screen"` |
-| MCP-host не видит инструменты | где-то лог уехал в stdout, ломая JSON-RPC framing | проверь, что нет `Console.WriteLine` ни в одном файле; все логи через `ILogger`, `LogToStandardErrorThreshold=Trace` |
-| Мышь работает только на основном мониторе | в `SendInput.dwFlags` нет `MOUSEEVENTF_VIRTUALDESK` | проверь `InputService.MouseMoveScreen` — должно быть `MOVE \| ABSOLUTE \| VIRTUALDESK` |
-| `dotnet test` падает с «System.Threading.Lock not found» | старый язык-уровень | csproj должен иметь `<TargetFramework>net10.0-windows</TargetFramework>` — `Lock` тип появился в .NET 9 |
-| ImageSharp warnings NU1902/NU1903 при сборке | пин на 3.1.5 (последняя Apache-2.0 версия) | ожидаемо. 4.x требует платную лицензию. CVE не эксплуатируемые в нашем pipeline (мы не загружаем сторонние PNG/GIF — только BitBlt-буфер). |
+| `'vswhere.exe' is not recognized` during `dotnet publish` | MSVC installer dir not on PATH | `$env:PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer;$env:PATH"` |
+| Clicks land ~2-4 px off on a DPI-scaled monitor | manifest not applied | Verify `app.manifest` is embedded (`dumpbin /headers` should show `application/dpiAware`). Republish. |
+| `BitBlt` returns a black image for a specific window | HW-accelerated DWM composition (Chrome, Electron, some DRM) | Known GDI limitation. v0.2 will add a `Windows.Graphics.Capture` fallback. |
+| Tool returns "No ScalePlan cached for monitor N" | called `mouse_*` without a prior `screenshot` for that monitor | Call `screenshot(monitor_index=N)` first, or pass `coord_space="screen"`. |
+| MCP host doesn't see any tools | some log leaked to stdout, breaking JSON-RPC framing | Check no `Console.WriteLine` anywhere; all logs go through `ILogger` with `LogToStandardErrorThreshold=Trace`. |
+| Mouse only reacts on the primary monitor | `SendInput.dwFlags` is missing `MOUSEEVENTF_VIRTUALDESK` | Check `InputService.MouseMoveScreen` — should be `MOVE \| ABSOLUTE \| VIRTUALDESK`. |
+| `dotnet test` fails with "System.Threading.Lock not found" | language level too old | csproj must have `<TargetFramework>net10.0-windows</TargetFramework>` — the `Lock` type ships in .NET 9+. |
+| ImageSharp NU1902/NU1903 warnings during build | pinned to 3.1.5 (last Apache-2.0 release) | Expected. 4.x requires a paid license. The CVEs are not exploitable in our pipeline — we never load third-party PNG/GIF data, only BitBlt buffers. |
 
-### Логи
+### Logs
 
-Сервер пишет в stderr. Claude Code сохраняет их (зависит от версии — обычно `~/.claude/logs/` или `%APPDATA%\Claude\logs\`). Для подробной отладки запускай с `--log-level Debug` или `Trace`.
+The server writes to stderr. Claude Code persists them (path depends on the version — usually `~/.claude/logs/` or `%APPDATA%\Claude\logs\`). For detailed debugging launch with `--log-level Debug` or `Trace`.
 
 ---
 
-## Известные ограничения v0.1
+## Known limitations in v0.1
 
-1. **`zoom` action** (computer_20251124) не реализован — для Claude Opus 4.7, который поддерживает 1:1 координаты до 2576px, оптимальный workflow ещё не оптимизирован. Используй `downscale=false` для нативного разрешения.
-2. **`VisualFlash` — stub.** Не рисует overlay, только логирует. Реальный layered window — в v0.2.
-3. **`Windows.Graphics.Capture` отсутствует** — для HW-accelerated окон BitBlt вернёт чёрный. v0.2 добавит fallback через CsWinRT.
-4. **`shell` quoting** — простой `Replace("\"", "\\\"")`. Не справится со сложными цепочками. Workaround: пиши команды без вложенных кавычек.
-5. **`read_file binary`** грузит файл целиком в память + base64. Для больших бинарей это OOM-риск. Лимитировано System.IO лимитами .NET.
-6. **MCP SDK 1.3.0** — pin. Минорные апдейты могут менять имена content-блоков (см. memory `project_mcp_sdk_api.md` если поднимаешь версию).
+1. **`zoom` action** (computer_20251124) is not implemented — for Claude Opus 4.7, which supports 1:1 coordinates up to 2576px, the optimal workflow is not yet tuned. Use `downscale=false` for native resolution.
+2. **`VisualFlash` is a stub.** It does not draw an overlay, only logs. The real layered window will land in v0.2.
+3. **`Windows.Graphics.Capture` is absent** — for HW-accelerated windows BitBlt returns black. v0.2 will add a CsWinRT fallback.
+4. **`shell` quoting** — a simple `Replace("\"", "\\\"")`. Won't handle complex command chains. Workaround: write commands without nested quotes.
+5. **`read_file binary`** loads the whole file into memory and then into base64. For large binaries this is an OOM risk. Bounded by .NET's `System.IO` limits.
+6. **MCP SDK 1.3.0** is pinned. Minor updates may rename content-block types (see the `project_mcp_sdk_api` memory note before bumping).
 
 ---
 
 ## Roadmap (v0.2)
 
-- Реальный VisualFlash через `CreateWindowExW` + `SetLayeredWindowAttributes` (200 ms красная рамка на месте клика)
-- `Windows.Graphics.Capture` fallback для DRM/HW-accelerated окон
-- `zoom` tool — sub-region capture без downscale (для Opus 4.7)
-- In-process MCP-клиент в тестах (без зависимости от Claude Code)
-- `<NoWarn>NU1902;NU1903</NoWarn>` в csproj с комментарием-обоснованием
-- Bounds-check в `MouseTools` через injected `MonitorRegistry`
-- Нормальное shell-quoting через `-EncodedCommand <base64-UTF16LE>`
-- UIA accessibility-tree снапшот как опциональный tool (за флагом)
+- Real VisualFlash via `CreateWindowExW` + `SetLayeredWindowAttributes` (200 ms red frame at click site)
+- `Windows.Graphics.Capture` fallback for DRM / HW-accelerated windows
+- `zoom` tool — sub-region capture without downscale (for Opus 4.7)
+- In-process MCP client for tests (no dependency on Claude Code)
+- `<NoWarn>NU1902;NU1903</NoWarn>` in csproj with an explanatory comment
+- Bounds-check in `MouseTools` using the injected `MonitorRegistry`
+- Proper shell quoting via `-EncodedCommand <base64-UTF16LE>`
+- UIA accessibility-tree snapshot as an optional tool (behind a flag)
 
 ---
 
-## Дизайн-документы и история
+## Design documents and history
 
-- **Спека:** [docs/superpowers/specs/2026-05-21-computer-use-mcp-design.md](docs/superpowers/specs/2026-05-21-computer-use-mcp-design.md)
-- **План реализации:** [docs/superpowers/plans/2026-05-21-computer-use-mcp.md](docs/superpowers/plans/2026-05-21-computer-use-mcp.md)
+- **Spec:** [docs/superpowers/specs/2026-05-21-computer-use-mcp-design.md](docs/superpowers/specs/2026-05-21-computer-use-mcp-design.md)
+- **Implementation plan:** [docs/superpowers/plans/2026-05-21-computer-use-mcp.md](docs/superpowers/plans/2026-05-21-computer-use-mcp.md)
 - **Research PDF:** [docs/Building a Windows Computer-Use MCP Server in C# with Native AOT.pdf](docs/Building%20a%20Windows%20Computer-Use%20MCP%20Server%20in%20C%23%20with%20Native%20AOT.pdf)
-- **Git tag:** `v0.1.0` (`git log v0.1.0 --oneline` — 20 коммитов от bootstrap до harden)
+- **Git tag:** `v0.1.0` (`git log v0.1.0 --oneline` — 20 commits from bootstrap to harden)
 
 ---
 
-## Безопасность
+## Security
 
-Этот сервер даёт MCP-клиенту полный контроль над твоей машиной: ввод от лица пользователя, чтение/запись любых файлов, запуск любых процессов, выполнение PowerShell. **НЕ подключай его к ненадёжному LLM-клиенту.** Сервер запускается с правами того процесса, который его spawn'ит — обычно это твой пользователь.
+This server grants the MCP client full control over your machine: synthetic input on your behalf, read/write of any file, launch of any process, arbitrary PowerShell. **Do not connect it to an untrusted LLM client.** The server runs with the privileges of the process that spawned it — typically your user account.
 
-Sandbox-возможностей нет (по дизайну — спека явно исключает их из v1). Если нужна изоляция — используй виртуальную машину или контейнер.
+No sandboxing capabilities are provided (by design — the spec explicitly excludes them from v1). If you need isolation, use a virtual machine or container.
 
 ---
 
 ## Credits
 
-- **Anthropic** — Action schema `computer_20250124`, downscale алгоритм (claude-quickstarts/computer-use-demo)
-- **CursorTouch/Windows-MCP** — таксономия Windows-инструментов (Click/Type/Scroll/Shortcut...)
-- **modelcontextprotocol/csharp-sdk** — официальный C# SDK
+- **Anthropic** — the `computer_20250124` action schema and downscale algorithm (claude-quickstarts/computer-use-demo)
+- **CursorTouch/Windows-MCP** — the Windows tool taxonomy (Click/Type/Scroll/Shortcut/...)
+- **modelcontextprotocol/csharp-sdk** — the official C# MCP SDK
 - **SixLabors.ImageSharp 3.1.5** — fully managed PNG/codec layer (Apache-2.0)
