@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Mcp.ComputerUse.Core;
 using Mcp.ComputerUse.Json;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -12,12 +13,14 @@ public sealed class ScreenTools
     private readonly ScreenCaptureService _capture;
     private readonly ScalePlanCache _planCache;
     private readonly ScreenshotStorage _storage;
+    private readonly ILogger<ScreenTools> _log;
 
-    public ScreenTools(ScreenCaptureService capture, ScalePlanCache planCache, ScreenshotStorage storage)
+    public ScreenTools(ScreenCaptureService capture, ScalePlanCache planCache, ScreenshotStorage storage, ILogger<ScreenTools> log)
     {
         _capture = capture;
         _planCache = planCache;
         _storage = storage;
+        _log = log;
     }
 
     [McpServerTool, Description("Capture a screenshot of the specified monitor. Returns both an image block (PNG, base64) for vision and a text block with the ScalePlan metadata. The model should use the scaled coordinates returned here for subsequent mouse_* calls with coord_space='model'.")]
@@ -27,6 +30,7 @@ public sealed class ScreenTools
         [Description("Convert to grayscale to reduce size (default false).")] bool grayscale = false,
         [Description("Optional override directory to save the PNG. Defaults to current working directory or MCP_COMPUTERUSE_SCREENSHOTS_DIR.")] string? savePath = null)
     {
+        _log.LogDebug("tool_call tool={Tool} monitor={Monitor} downscale={Downscale} grayscale={Grayscale}", nameof(Screenshot), monitorIndex, downscale, grayscale);
         var result = _capture.CaptureMonitor(monitorIndex, downscale, grayscale);
         _planCache.Set(monitorIndex, result.Plan);
         var saved = _storage.Save(result.PngBytes, monitorIndex, savePath);
