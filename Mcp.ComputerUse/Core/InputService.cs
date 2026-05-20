@@ -130,4 +130,50 @@ public sealed class InputService
         U = new InputUnion { ki = new KEYBDINPUT { wScan = unit, dwFlags = Win32.KEYEVENTF_UNICODE | Win32.KEYEVENTF_KEYUP } }
     };
     internal static void SendBatch(INPUT[] inputs) => SendOrThrow(inputs);
+
+    public void TypeText(string text, int delayMs)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        foreach (var unit in text)
+        {
+            SendBatch([MakeUnicodeDown(unit), MakeUnicodeUp(unit)]);
+            if (delayMs > 0) Thread.Sleep(delayMs);
+        }
+    }
+
+    public void KeyPress(string key)
+    {
+        var vk = VirtualKeyMap.Resolve(key);
+        SendBatch([VkDown(vk), VkUp(vk)]);
+    }
+
+    public void KeyHold(string key, int ms)
+    {
+        var vk = VirtualKeyMap.Resolve(key);
+        SendBatch([VkDown(vk)]);
+        Thread.Sleep(ms);
+        SendBatch([VkUp(vk)]);
+    }
+
+    public void KeyHotkey(string chord)
+    {
+        var vks = VirtualKeyMap.ParseChord(chord);
+        if (vks.Length == 0) return;
+        var down = vks.Select(VkDown).ToArray();
+        var up = vks.Reverse().Select(VkUp).ToArray();
+        SendBatch(down);
+        SendBatch(up);
+    }
+
+    private static INPUT VkDown(ushort vk) => new()
+    {
+        type = Win32.INPUT_KEYBOARD,
+        U = new InputUnion { ki = new KEYBDINPUT { wVk = vk } }
+    };
+
+    private static INPUT VkUp(ushort vk) => new()
+    {
+        type = Win32.INPUT_KEYBOARD,
+        U = new InputUnion { ki = new KEYBDINPUT { wVk = vk, dwFlags = Win32.KEYEVENTF_KEYUP } }
+    };
 }
