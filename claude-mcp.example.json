@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "computer-use": {
+      "command": "C:\\Works\\Mcp.ComputerUse\\Mcp.ComputerUse\\bin\\Release\\net10.0-windows\\win-x64\\publish\\mcp-computeruse.exe",
+      "args": []
+    }
+  }
+}
