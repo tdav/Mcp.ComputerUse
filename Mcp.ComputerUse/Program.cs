@@ -29,6 +29,7 @@ builder.Services
     .WithTools<PingTools>()
     .WithTools<MonitorTools>()
     .WithTools<ScreenTools>()
-    .WithTools<MouseTools>();
+    .WithTools<MouseTools>()
+    .WithTools<KeyboardTools>();
 
 await builder.Build().RunAsync();
